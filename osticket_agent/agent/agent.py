@@ -24,7 +24,7 @@ class NetworkAgent:
         osticket_client: OSTicketClient,
         openrouter_api_key: str,
         switches: Dict[str, SwitchOperation],
-        model: str = "anthropic/claude-3-haiku",
+        model: str,
         ticket_tracker: Optional[TicketTracker] = None
     ):
         """
@@ -90,6 +90,8 @@ class NetworkAgent:
             True if the ticket was successfully processed, False otherwise.
         """
         logger.info(f"Processing ticket {ticket.id}: {ticket.subject}")
+        logger.debug(f"Ticket details: ID={ticket.id}, Number={ticket.number}, Subject='{ticket.subject}', Status={ticket.status_name}")
+        logger.debug(f"Ticket description: {ticket.description}")
         
         # Skip if already processed
         if self.ticket_tracker.is_processed(ticket.id):
@@ -98,6 +100,7 @@ class NetworkAgent:
         
         # Get agent
         agent = self._create_agent()
+        logger.debug(f"Created AI agent with model: {self.model}")
         
         # First, ask the agent to analyze the ticket
         analysis_prompt = f"""
@@ -122,22 +125,26 @@ class NetworkAgent:
         """
         
         try:
+            logger.debug(f"Sending analysis prompt to AI agent")
             analysis_response = agent.run(analysis_prompt)
-            logger.debug(f"Analysis response: {analysis_response}")
+            logger.debug(f"Analysis response from AI: {analysis_response}")
             
             # If the agent determines the ticket is not in scope, mark as processed
             if "not within" in analysis_response.lower() or "out of scope" in analysis_response.lower():
-                logger.info(f"Ticket {ticket.id} not in scope, marking as processed")
+                logger.info(f"Ticket {ticket.id} determined to be out of scope, marking as processed")
                 self.ticket_tracker.mark_processed(ticket.id)
                 
                 # Reply to the ticket indicating it's not in scope
-                self.osticket_client.reply_to_ticket(
+                logger.debug(f"Replying to ticket {ticket.id} indicating it's out of scope")
+                reply_success = self.osticket_client.reply_to_ticket(
                     ticket.id,
                     f"This ticket is not within the scope of automated network operations: {analysis_response}"
                 )
+                logger.debug(f"Reply to ticket {ticket.id} success: {reply_success}")
                 return True
             
             # Otherwise, ask the agent to process the ticket
+            logger.info(f"Ticket {ticket.id} is in scope, proceeding with processing")
             process_prompt = f"""
             You've determined that ticket {ticket.id} is within your scope.
             
@@ -150,15 +157,18 @@ class NetworkAgent:
             Be sure to handle any errors that occur during the process.
             """
             
+            logger.debug(f"Sending processing prompt to AI agent for ticket {ticket.id}")
             process_response = agent.run(process_prompt)
-            logger.debug(f"Process response: {process_response}")
+            logger.debug(f"Process response from AI for ticket {ticket.id}: {process_response}")
             
             # Mark the ticket as processed regardless of outcome
+            logger.info(f"Marking ticket {ticket.id} as processed")
             self.ticket_tracker.mark_processed(ticket.id)
             return True
         
         except Exception as e:
-            logger.error(f"Error processing ticket {ticket.id}: {e}")
+            logger.error(f"Error processing ticket {ticket.id}: {e}", exc_info=True)
+            logger.debug(f"Exception details for ticket {ticket.id}: {type(e).__name__}: {str(e)}")
             return False
     
     def run(self, poll_interval: int = 60) -> None:
@@ -169,25 +179,35 @@ class NetworkAgent:
             poll_interval: Interval in seconds to poll for new tickets.
         """
         logger.info(f"Starting network agent with poll interval {poll_interval}s")
+        logger.info(f"Using AI model: {self.model}")
+        logger.info(f"Configured switches: {', '.join(self.switches.keys())}")
         
         try:
             while True:
                 try:
+                    logger.debug("Polling for new tickets...")
                     # Get open tickets
                     tickets = self.osticket_client.get_tickets()
+                    logger.debug(f"Retrieved {len(tickets)} tickets from osTicket")
                     
                     # Filter to unprocessed tickets
                     unprocessed_tickets = self.ticket_tracker.filter_unprocessed_tickets(tickets)
+                    if unprocessed_tickets:
+                        logger.info(f"Found {len(unprocessed_tickets)} unprocessed tickets to process")
+                    else:
+                        logger.debug("No new tickets to process")
                     
                     # Process each ticket
                     for ticket in unprocessed_tickets:
-                        self.process_ticket(ticket)
+                        logger.debug(f"Processing ticket {ticket.id}...")
+                        success = self.process_ticket(ticket)
+                        logger.debug(f"Ticket {ticket.id} processing {'succeeded' if success else 'failed'}")
                 
                 except Exception as e:
-                    logger.error(f"Error in main loop: {e}")
+                    logger.error(f"Error in main loop: {e}", exc_info=True)
                 
                 # Wait for next poll
-                logger.debug(f"Sleeping for {poll_interval}s")
+                logger.debug(f"Sleeping for {poll_interval}s until next poll")
                 time.sleep(poll_interval)
         
         except KeyboardInterrupt:

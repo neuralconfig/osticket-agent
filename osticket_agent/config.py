@@ -31,7 +31,7 @@ class Config:
     osticket: OSTicketConfig
     network_devices: Dict[str, NetworkDeviceConfig]
     openrouter_api_key: str
-    model: str = "anthropic/claude-3-haiku"  # Default model
+    model: str = "anthropic/claude-3.5-haiku"  # Default model
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
@@ -96,7 +96,7 @@ def load_config(config_path: Optional[str] = None) -> Config:
                        "Set it in config.ini or OPENROUTER_API_KEY environment variable.")
 
     # Get model name 
-    model = parser.get("openrouter", "model", fallback="anthropic/claude-3-haiku")
+    model = parser.get("openrouter", "model", fallback="anthropic/claude-3.5-haiku")
 
     return Config(
         osticket=osticket_config,

@@ -9,16 +9,8 @@ from osticket_agent.config import load_config, Config
 from osticket_agent.api.osticket import OSTicketClient
 from osticket_agent.network.switch import SwitchOperation
 from osticket_agent.agent.agent import NetworkAgent
+from osticket_agent.utils.logging import setup_logging
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("osticket_agent.log")
-    ]
-)
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +27,16 @@ def parse_args():
         help="Enable verbose logging",
         action="store_true"
     )
+    parser.add_argument(
+        "--debug", "-d",
+        help="Enable debug level logging (even more verbose)",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--log-file", "-l",
+        help="Path to log file (default: osticket_agent.log)",
+        default="osticket_agent.log"
+    )
     return parser.parse_args()
 
 
@@ -42,9 +44,9 @@ def main():
     """Main entry point."""
     args = parse_args()
     
-    # Set log level
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    # Set up logging
+    log_level = logging.DEBUG if args.debug else (logging.INFO if args.verbose else logging.WARNING)
+    setup_logging(log_file=args.log_file, level=log_level)
     
     try:
         # Load configuration
