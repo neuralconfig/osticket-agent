@@ -36,3 +36,4 @@ reference/
 CLAUDE.md
 .env
 config.ini
+*.log

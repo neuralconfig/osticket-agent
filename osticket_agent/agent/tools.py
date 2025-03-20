@@ -236,7 +236,7 @@ class SetPortStatusTool(Tool):
         },
         "status": {
             "type": "string",
-            "description": "New status ('up' or 'down')"
+            "description": "New status ('enable' or 'disable')"
         }
     }
     output_type = "boolean"
@@ -252,7 +252,7 @@ class SetPortStatusTool(Tool):
         Args:
             switch_name: Name of the switch.
             port: Port name.
-            status: New status ("up" or "down").
+            status: New status ("enable" or "disable").
             
         Returns:
             True if successful, False otherwise.
@@ -266,7 +266,7 @@ class SetPortStatusTool(Tool):
         try:
             port_status = PortStatus(status.lower())
         except ValueError:
-            raise ValueError(f"Invalid port status '{status}'. Use 'up' or 'down'.")
+            raise ValueError(f"Invalid port status '{status}'. Use 'enable' or 'disable'.")
         
         switch = self.switches[switch_name]
         

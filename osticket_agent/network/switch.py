@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 class PortStatus(str, Enum):
     """Port status."""
-    UP = "up"
-    DOWN = "down"
+    ENABLE = "enable"
+    DISABLE = "disable"
 
 
 class PoEStatus(str, Enum):
@@ -71,7 +72,9 @@ class SwitchOperation:
         try:
             logger.info(f"Connecting to {self.hostname}...")
             self._connection = ConnectHandler(**device)
-            logger.info(f"Connected to {self.hostname}")
+            # Enter enable mode
+            self._connection.enable()
+            logger.info(f"Connected to {self.hostname} and entered enable mode")
         except NetmikoTimeoutException:
             logger.error(f"Connection to {self.hostname} timed out")
             raise
@@ -112,6 +115,7 @@ class SwitchOperation:
         
         logger.debug(f"Executing command: {command}")
         output = self._connection.send_command(command)
+        logger.debug(f"Command output: {output}")
         return output
     
     def configure(self, commands: List[str]) -> str:
@@ -132,6 +136,7 @@ class SwitchOperation:
         
         logger.debug(f"Configuring with commands: {commands}")
         output = self._connection.send_config_set(commands)
+        logger.debug(f"Configuration output: {output}")
         return output
     
     def get_port_status(self, port: str) -> Optional[PortStatus]:
@@ -144,13 +149,24 @@ class SwitchOperation:
         Returns:
             Port status or None if port not found.
         """
-        output = self.execute_command(f"show interfaces ethernet {port}")
+        # Use show int br command to get status
+        output = self.execute_command(f"show int br e {port}")
         
-        # Look for "port state: up" or "port state: down"
-        match = re.search(r"port state: (up|down)", output, re.IGNORECASE)
+        # Check for status from brief output
+        # Format: Port Link State Dupl Speed Trunk Tag Pvid Pri MAC Name
+        # Sample: 1/1/1 Up Forward Full 1G None No 1 0 94b3.4f31.485c 
+        # Sample: 1/1/1 Disable None None None None No 1 0 94b3.4f31.485c 
+        # Sample: 1/1/1 Down None None None None No 1 0 94b3.4f31.485c
+        
+        # Extract the Link column which will be Up, Down, or Disable
+        port_pattern = re.escape(port)
+        match = re.search(rf"{port_pattern}\s+(\w+)", output)
+        
         if match:
             status = match.group(1).lower()
-            return PortStatus.UP if status == "up" else PortStatus.DOWN
+            # "Disable" means port is administratively down
+            # "Up" or "Down" means port is administratively up (enabled)
+            return PortStatus.DISABLE if status == "disable" else PortStatus.ENABLE
         
         return None
     
@@ -164,10 +180,16 @@ class SwitchOperation:
         Returns:
             VLAN ID or None if port not found.
         """
-        output = self.execute_command(f"show interfaces ethernet {port}")
+        # Use show vlan brief command to get VLAN
+        output = self.execute_command(f"show vlan br e {port}")
         
-        # Look for "Port {port} is a member of VLAN {vlan_id}"
-        match = re.search(r"member of VLAN (\d+)", output, re.IGNORECASE)
+        # Look for "Untagged VLAN : X"
+        match = re.search(r"Untagged VLAN\s+:\s+(\d+)", output, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        
+        # Alternatively, look for "VLANs X" in case of different output format
+        match = re.search(r"VLANs\s+(\d+)", output, re.IGNORECASE)
         if match:
             return int(match.group(1))
         
@@ -188,8 +210,14 @@ class SwitchOperation:
         if "Invalid input" in output or "No information available" in output:
             return None
         
-        # Look for "State: On" or "State: Off"
-        match = re.search(r"State: (On|Off)", output, re.IGNORECASE)
+        # Look for "Admin State On/Off" in the output table
+        # Format: Port Admin Oper ---Power(mWatts)--- PD Type PD Class Pri Fault/
+        #         State State Consumed Allocated                       Error
+        # Sample: 1/1/1 On Off 0 0 n/a n/a 3 n/a
+        
+        port_pattern = re.escape(port)
+        match = re.search(rf"\s+{port_pattern}\s+(On|Off)", output)
+        
         if match:
             state = match.group(1).lower()
             return PoEStatus.ENABLED if state == "on" else PoEStatus.DISABLED
@@ -208,16 +236,42 @@ class SwitchOperation:
             True if successful, False otherwise.
         """
         try:
-            commands = [
+            # First get current VLAN
+            current_vlan = self.get_port_vlan(port)
+            logger.info(f"Current VLAN for port {port}: {current_vlan}")
+            
+            # Commands to move port from current VLAN to new VLAN
+            commands = []
+            
+            # Try to remove from current VLAN first (may fail for default VLAN)
+            if current_vlan:
+                commands.extend([
+                    f"vlan {current_vlan}",
+                    f"no untagged ethernet {port}",
+                    "exit"
+                ])
+            
+            # Add to new VLAN
+            commands.extend([
                 f"vlan {vlan_id}",
                 f"untagged ethernet {port}",
                 "exit"
-            ]
+            ])
             
+            # Execute commands
             self.configure(commands)
+            
+            # Save configuration with write memory command
+            self.execute_command("write memory")
+            logger.info("Configuration saved with 'write memory'")
+            
+            # Wait for change to apply
+            logger.info("Waiting for VLAN change to apply...")
+            time.sleep(3)
             
             # Verify the change
             new_vlan = self.get_port_vlan(port)
+            logger.info(f"New VLAN for port {port}: {new_vlan}")
             return new_vlan == vlan_id
         except Exception as e:
             logger.error(f"Failed to change VLAN on port {port}: {e}")
@@ -237,14 +291,25 @@ class SwitchOperation:
         try:
             commands = [
                 f"interface ethernet {port}",
-                "enable" if status == PortStatus.UP else "disable",
+                "enable" if status == PortStatus.ENABLE else "disable",
                 "exit"
             ]
             
             self.configure(commands)
             
+            # Save configuration with write memory command
+            self.execute_command("write memory")
+            logger.info("Configuration saved with 'write memory'")
+            
+            # Wait for change to apply
+            logger.info("Waiting for port status change to apply...")
+            time.sleep(3)
+            
             # Verify the change
             new_status = self.get_port_status(port)
+            logger.info(f"New status for port {port}: {new_status}")
+            
+            # Verify status matches expected status
             return new_status == status
         except Exception as e:
             logger.error(f"Failed to set status on port {port}: {e}")
@@ -270,8 +335,14 @@ class SwitchOperation:
             
             self.configure(commands)
             
-            # Verify the change
+            # Wait for change to apply
+            logger.info("Waiting for PoE status change to apply...")
+            time.sleep(3)
+            
+            # Verify the change - note that PoE changes can take longer
             new_status = self.get_poe_status(port)
+            logger.info(f"New PoE status for port {port}: {new_status}")
+            
             return new_status == status
         except Exception as e:
             logger.error(f"Failed to set PoE status on port {port}: {e}")
