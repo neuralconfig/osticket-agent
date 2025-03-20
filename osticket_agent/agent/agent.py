@@ -231,7 +231,8 @@ class NetworkAgent:
         try:
             while True:
                 try:
-                    logger.debug("Polling for new tickets...")
+                    print("Polling for new tickets now...")
+                    logger.info("Polling for new tickets now...")
                     # Get open tickets
                     tickets = self.osticket_client.get_tickets()
                     logger.debug(f"Retrieved {len(tickets)} tickets from osTicket")
@@ -247,14 +248,6 @@ class NetworkAgent:
                         logger.info(f"Found {len(unprocessed_tickets)} unprocessed tickets to process")
                     else:
                         logger.debug("No new tickets to process")
-                        
-                    # Special handling for test ticket - look for a specific subject
-                    # This will help us debug why it might not be picked up normally
-                    test_tickets = [t for t in tickets if "test" in t.subject.lower()]
-                    if test_tickets:
-                        logger.info(f"Found {len(test_tickets)} test tickets: {[t.id for t in test_tickets]}")
-                        # For now, add the test tickets to the unprocessed list for testing
-                        unprocessed_tickets.extend([t for t in test_tickets if t not in unprocessed_tickets])
                     
                     # Process each ticket
                     for ticket in unprocessed_tickets:
@@ -266,8 +259,19 @@ class NetworkAgent:
                     logger.error(f"Error in main loop: {e}", exc_info=True)
                 
                 # Wait for next poll
-                logger.debug(f"Sleeping for {poll_interval}s until next poll")
-                time.sleep(poll_interval)
+                print(f"Polling for new tickets in {poll_interval} seconds...")
+                logger.info(f"Polling for new tickets in {poll_interval} seconds...")
+                
+                # Add countdown every 10 seconds
+                remaining_time = poll_interval
+                countdown_interval = 10
+                
+                while remaining_time > 0:
+                    time.sleep(min(countdown_interval, remaining_time))
+                    remaining_time -= countdown_interval
+                    if remaining_time > 0:
+                        print(f"Polling for new tickets in {remaining_time} seconds...")
+                        logger.info(f"Polling for new tickets in {remaining_time} seconds...")
         
         except KeyboardInterrupt:
             logger.info("Received keyboard interrupt, shutting down")
