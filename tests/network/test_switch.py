@@ -116,7 +116,7 @@ class TestSwitchOperation(TestCase):
         mock_connection = mock.Mock()
         mock_connection.is_alive.return_value = True
         mock_connection.send_command.return_value = """
-        Port 1/1/1 state: up
+        Port 1/1/1 Link: Up State: Forward
         """
         mock_connect.return_value = mock_connection
         
@@ -125,8 +125,8 @@ class TestSwitchOperation(TestCase):
         status = self.switch.get_port_status("1/1/1")
         
         # Verify
-        mock_connection.send_command.assert_called_once_with("show interfaces ethernet 1/1/1")
-        self.assertEqual(status, PortStatus.UP)
+        mock_connection.send_command.assert_called_once_with("show int br e 1/1/1")
+        self.assertEqual(status, PortStatus.ENABLE)
     
     @mock.patch("netmiko.ConnectHandler")
     def test_get_port_vlan(self, mock_connect):
@@ -144,7 +144,7 @@ class TestSwitchOperation(TestCase):
         vlan = self.switch.get_port_vlan("1/1/1")
         
         # Verify
-        mock_connection.send_command.assert_called_once_with("show interfaces ethernet 1/1/1")
+        mock_connection.send_command.assert_called_once_with("show vlan br e 1/1/1")
         self.assertEqual(vlan, 100)
     
     @mock.patch("netmiko.ConnectHandler")
@@ -201,11 +201,11 @@ class TestSwitchOperation(TestCase):
         mock_connection.is_alive.return_value = True
         mock_connect.return_value = mock_connection
         mock_configure.return_value = "Config output"
-        mock_get_status.return_value = PortStatus.UP
+        mock_get_status.return_value = PortStatus.ENABLE
         
         # Connect and set port status
         self.switch.connect()
-        result = self.switch.set_port_status("1/1/1", PortStatus.UP)
+        result = self.switch.set_port_status("1/1/1", PortStatus.ENABLE)
         
         # Verify
         mock_configure.assert_called_once_with([

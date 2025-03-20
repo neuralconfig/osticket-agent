@@ -54,12 +54,15 @@ class NetworkAgent:
         
         You can perform the following tasks:
         1. Change VLAN on a port
-        2. Enable or disable a port
-        3. Enable or disable PoE on a port
+        2. Enable or disable a port (using 'enable' or 'disable' status)
+        3. Enable or disable PoE on a port (using 'enabled' or 'disabled' status)
         
         When given a ticket, analyze it to determine if it's within your scope.
         If it is, use your tools to make the requested changes, verify them, and close the ticket.
         If it's not within your scope, explain why and do not make any changes.
+        
+        For port status, 'enable' means the port is administratively up, and 'disable' means
+        it is administratively down. This is different from the physical link status (up/down).
         
         When replying to tickets, be professional and concise. Explain what changes you made
         and any verification steps you took.
@@ -152,7 +155,7 @@ class NetworkAgent:
         
         Is this ticket requesting any of the following operations?
         1. Change VLAN on a port
-        2. Enable or disable a port
+        2. Enable or disable a port (administrative state)
         3. Enable or disable PoE on a port
         
         If it is, extract the following information:
@@ -160,6 +163,9 @@ class NetworkAgent:
         - The port number
         - The requested operation
         - Any specific parameters (like VLAN ID)
+        
+        For port status operations, use 'enable' or 'disable' to describe the administrative state.
+        For PoE operations, use 'enabled' or 'disabled' to describe the PoE state.
         
         If it's not within your scope, explain why.
         """
