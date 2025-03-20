@@ -1,6 +1,8 @@
-# OSTicket Network Agent
+# osTicket Network Agent
 
 An AI-powered agent to automatically resolve network-related tickets in osTicket by managing RUCKUS ICX switches.
+
+![osTicket Network Agent Demo](assets/osticket-demo.gif)
 
 ## Features
 
