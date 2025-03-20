@@ -83,6 +83,20 @@ class TicketTracker:
         Returns:
             List of unprocessed tickets.
         """
-        unprocessed = [t for t in tickets if not self.is_processed(t.id)]
-        logger.info(f"Filtered {len(tickets)} tickets to {len(unprocessed)} unprocessed")
-        return unprocessed
+        # First, log all tickets for debugging
+        logger.debug(f"Received {len(tickets)} tickets for filtering")
+        for ticket in tickets:
+            logger.debug(f"Ticket ID: {ticket.id}, Number: {ticket.number}, Subject: '{ticket.subject}', "
+                         f"Status: {ticket.status_id} ({ticket.status_name}), Is Open: {ticket.is_open}")
+        
+        # Filter to open, unprocessed tickets
+        unprocessed_open = [t for t in tickets if t.is_open and not self.is_processed(t.id)]
+        
+        # Log the filtering results
+        skipped_processed = len([t for t in tickets if t.is_open and self.is_processed(t.id)])
+        skipped_closed = len([t for t in tickets if not t.is_open])
+        
+        logger.info(f"Filtered {len(tickets)} tickets: {len(unprocessed_open)} open and unprocessed, "
+                    f"{skipped_processed} already processed, {skipped_closed} not open")
+        
+        return unprocessed_open

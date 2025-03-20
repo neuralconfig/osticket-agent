@@ -5,7 +5,7 @@ import time
 from typing import Dict, List, Optional, Any
 
 import openai
-from smolagents.runner.agent import Agent
+from smolagents import ToolCallingAgent as Agent  # Using ToolCallingAgent for tool use
 
 from osticket_agent.api.osticket import Ticket, OSTicketClient
 from osticket_agent.api.ticket_tracker import TicketTracker
@@ -72,12 +72,52 @@ class NetworkAgent:
         Returns:
             SmolaGents Agent instance.
         """
-        return Agent(
-            provider="openai",
-            model=self.model,
-            tools=self.tools,
-            system_message=self.system_message,
+        # Use OpenAIServerModel for OpenRouter API
+        from smolagents import OpenAIServerModel, PromptTemplates
+        import yaml
+        import importlib
+        
+        # Get default templates first
+        default_templates = yaml.safe_load(
+            importlib.resources.files("smolagents.prompts").joinpath("toolcalling_agent.yaml").read_text()
         )
+        
+        # Create custom prompt templates with our system message
+        prompt_templates = PromptTemplates(
+            system_prompt=self.system_message,
+            planning=default_templates["planning"],
+            managed_agent=default_templates["managed_agent"],
+            final_answer=default_templates["final_answer"]
+        )
+        
+        # Create the agent with the prompt templates
+        # OpenRouter uses the OpenAI API format
+        import openai
+        
+        # Configure OpenAI client for OpenRouter
+        openai.api_key = self.openrouter_api_key
+        openai.base_url = "https://openrouter.ai/api/v1"
+        
+        # Add HTTP headers specifically for OpenRouter
+        client_kwargs = {
+            "default_headers": {
+                "HTTP-Referer": "http://localhost:8000",  # Required by OpenRouter
+                "X-Title": "OSTicket Network Agent"  # Optional app name
+            }
+        }
+        
+        agent = Agent(
+            tools=self.tools, 
+            model=OpenAIServerModel(
+                model_id=self.model,  # This should be the model ID like "anthropic/claude-3-5-haiku"
+                api_key=self.openrouter_api_key,
+                api_base="https://openrouter.ai/api/v1",
+                client_kwargs=client_kwargs
+            ),
+            prompt_templates=prompt_templates
+        )
+        
+        return agent
     
     def process_ticket(self, ticket: Ticket) -> bool:
         """
@@ -190,12 +230,25 @@ class NetworkAgent:
                     tickets = self.osticket_client.get_tickets()
                     logger.debug(f"Retrieved {len(tickets)} tickets from osTicket")
                     
+                    # Add more detailed logging about all tickets
+                    for ticket in tickets:
+                        logger.debug(f"Retrieved ticket: ID={ticket.id}, Number={ticket.number}, "
+                                     f"Subject='{ticket.subject}', Status={ticket.status_id} ({ticket.status_name})")
+                    
                     # Filter to unprocessed tickets
                     unprocessed_tickets = self.ticket_tracker.filter_unprocessed_tickets(tickets)
                     if unprocessed_tickets:
                         logger.info(f"Found {len(unprocessed_tickets)} unprocessed tickets to process")
                     else:
                         logger.debug("No new tickets to process")
+                        
+                    # Special handling for test ticket - look for a specific subject
+                    # This will help us debug why it might not be picked up normally
+                    test_tickets = [t for t in tickets if "test" in t.subject.lower()]
+                    if test_tickets:
+                        logger.info(f"Found {len(test_tickets)} test tickets: {[t.id for t in test_tickets]}")
+                        # For now, add the test tickets to the unprocessed list for testing
+                        unprocessed_tickets.extend([t for t in test_tickets if t not in unprocessed_tickets])
                     
                     # Process each ticket
                     for ticket in unprocessed_tickets:
